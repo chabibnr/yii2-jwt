@@ -2,18 +2,22 @@
 
 namespace sizeg\jwt;
 
+use Codeception\Specify\Config;
 use Lcobucci\JWT\Builder;
 use Lcobucci\JWT\Claim\Factory as ClaimFactory;
 use Lcobucci\JWT\Parser;
 use Lcobucci\JWT\Parsing\Decoder;
 use Lcobucci\JWT\Parsing\Encoder;
 use Lcobucci\JWT\Signer;
-use Lcobucci\JWT\Signer\Key;
+use Lcobucci\JWT\Signer\Key\InMemory;
+use Lcobucci\JWT\Signer\Rsa\Sha256;
 use Lcobucci\JWT\Token;
 use Lcobucci\JWT\ValidationData;
 use Yii;
 use yii\base\Component;
 use yii\base\InvalidArgumentException;
+use Lcobucci\JWT\Configuration;
+use Lcobucci\JWT\Validation\Constraint\IdentifiedBy;
 
 /**
  * JSON Web Token implementation, based on this library:
@@ -40,10 +44,16 @@ class Jwt extends Component
         'RS512' => \Lcobucci\JWT\Signer\Rsa\Sha512::class,
     ];
 
-    /**
-     * @var Key|string $key The key
-     */
-    public $key;
+    public string $key;
+
+    protected Configuration $_config;
+
+    public function __construct($config = [])
+    {
+        parent::__construct($config);
+        $this->_config = Configuration::forSymmetricSigner(new Sha256(), InMemory::plainText($this->key));
+        $this->_config->setValidationConstraints(new IdentifiedBy('4f1g23a12aa'));
+    }
 
     /**
      * @var string|array|callable \sizeg\jwtJwtValidationData
@@ -51,15 +61,14 @@ class Jwt extends Component
      */
     public $jwtValidationData = JwtValidationData::class;
 
-    /**
-     * @see [[Lcobucci\JWT\Builder::__construct()]]
-     * @param Encoder|null $encoder
-     * @param ClaimFactory|null $claimFactory
-     * @return Builder
-     */
-    public function getBuilder(Encoder $encoder = null, ClaimFactory $claimFactory = null)
+    public function getBuilder() : Builder
     {
-        return new Builder($encoder, $claimFactory);
+        return $this->_config->builder();
+    }
+
+    public function getConfig() : Configuration
+    {
+        return $this->_config;
     }
 
     /**
@@ -70,7 +79,7 @@ class Jwt extends Component
      */
     public function getParser(Decoder $decoder = null, ClaimFactory $claimFactory = null)
     {
-        return new Parser($decoder, $claimFactory);
+        return $this->getConfig()->parser();
     }
 
     /**
@@ -93,20 +102,15 @@ class Jwt extends Component
         return new $class();
     }
 
-    /**
-     * @param strng $content
-     * @param string|null $passphrase
-     * @return Key
-     */
-    public function getKey($content = null, $passphrase = null)
+    public function getKey($content = null, $passphrase = null) : InMemory
     {
         $content = $content ?: $this->key;
 
-        if ($content instanceof Key) {
+        if ($content instanceof InMemory) {
             return $content;
         }
 
-        return new Key($content, $passphrase);
+        return InMemory::plainText($content);
     }
 
     /**
@@ -117,24 +121,18 @@ class Jwt extends Component
      * @return Token|null
      * @throws \Throwable
      */
-    public function loadToken($token, $validate = true, $verify = true)
+    public function loadToken(string $token, $validate = true, $verify = true)
     {
         try {
-            $token = $this->getParser()->parse((string) $token);
+            $token = $this->getParser()->parse($token);
         } catch (\RuntimeException $e) {
             Yii::warning('Invalid JWT provided: ' . $e->getMessage(), 'jwt');
             return null;
         } catch (\InvalidArgumentException $e) {
             Yii::warning('Invalid JWT provided: ' . $e->getMessage(), 'jwt');
-            return null;
         }
-
-        if ($validate && !$this->validateToken($token)) {
-            return null;
-        }
-
-        if ($verify && !$this->verifyToken($token)) {
-            return null;
+        if(!$this->getConfig()->validator()->validate($token, ...$this->getConfig()->validationConstraints())){
+            throw new InvalidArgumentException('Invalid token provided');
         }
 
         return $token;
