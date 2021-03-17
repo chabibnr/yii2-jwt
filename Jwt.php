@@ -2,22 +2,17 @@
 
 namespace sizeg\jwt;
 
-use Codeception\Specify\Config;
 use Lcobucci\JWT\Builder;
-use Lcobucci\JWT\Claim\Factory as ClaimFactory;
+use Lcobucci\JWT\Configuration;
 use Lcobucci\JWT\Parser;
-use Lcobucci\JWT\Parsing\Decoder;
-use Lcobucci\JWT\Parsing\Encoder;
 use Lcobucci\JWT\Signer;
 use Lcobucci\JWT\Signer\Key\InMemory;
 use Lcobucci\JWT\Signer\Rsa\Sha256;
 use Lcobucci\JWT\Token;
-use Lcobucci\JWT\ValidationData;
+use Lcobucci\JWT\Validation\Constraint\IdentifiedBy;
 use Yii;
 use yii\base\Component;
 use yii\base\InvalidArgumentException;
-use Lcobucci\JWT\Configuration;
-use Lcobucci\JWT\Validation\Constraint\IdentifiedBy;
 
 /**
  * JSON Web Token implementation, based on this library:
@@ -32,7 +27,7 @@ class Jwt extends Component
     /**
      * @var array Supported algorithms
      */
-    public $supportedAlgs = [
+    public array $supportedAlgs = [
         'HS256' => \Lcobucci\JWT\Signer\Hmac\Sha256::class,
         'HS384' => \Lcobucci\JWT\Signer\Hmac\Sha384::class,
         'HS512' => \Lcobucci\JWT\Signer\Hmac\Sha512::class,
@@ -55,12 +50,6 @@ class Jwt extends Component
         $this->_config->setValidationConstraints(new IdentifiedBy('4f1g23a12aa'));
     }
 
-    /**
-     * @var string|array|callable \sizeg\jwtJwtValidationData
-     * @see [[Yii::createObject()]]
-     */
-    public $jwtValidationData = JwtValidationData::class;
-
     public function getBuilder() : Builder
     {
         return $this->_config->builder();
@@ -71,24 +60,9 @@ class Jwt extends Component
         return $this->_config;
     }
 
-    /**
-     * @see [[Lcobucci\JWT\Parser::__construct()]]
-     * @param Decoder|null $decoder
-     * @param ClaimFactory|null $claimFactory
-     * @return Parser
-     */
-    public function getParser(Decoder $decoder = null, ClaimFactory $claimFactory = null)
+    public function getParser() : Parser
     {
         return $this->getConfig()->parser();
-    }
-
-    /**
-     * @see [[Lcobucci\JWT\ValidationData::__construct()]]
-     * @return ValidationData
-     */
-    public function getValidationData()
-    {
-        return Yii::createObject($this->jwtValidationData)->getValidationData();
     }
 
     /**
@@ -136,40 +110,5 @@ class Jwt extends Component
         }
 
         return $token;
-    }
-
-    /**
-     * Validate token
-     * @param Token $token token object
-     * @param int|null $currentTime
-     * @return bool
-     */
-    public function validateToken(Token $token, $currentTime = null)
-    {
-        $validationData = $this->getValidationData();
-        if ($currentTime !== null) {
-            $validationData->setCurrentTime($currentTime);
-        }
-        return $token->validate($validationData);
-    }
-
-    /**
-     * Validate token
-     * @param Token $token token object
-     * @return bool
-     * @throws \Throwable
-     */
-    public function verifyToken(Token $token)
-    {
-        $alg = $token->getHeader('alg');
-
-        if (empty($this->supportedAlgs[$alg])) {
-            throw new InvalidArgumentException('Algorithm not supported');
-        }
-
-        /** @var Signer $signer */
-        $signer = Yii::createObject($this->supportedAlgs[$alg]);
-
-        return $token->verify($signer, $this->key);
     }
 }
